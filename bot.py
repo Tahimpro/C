@@ -2,6 +2,7 @@ import requests
 import time
 import random
 import logging
+import asyncio
 from bs4 import BeautifulSoup
 from pymongo import MongoClient
 from telegram import Bot
@@ -107,17 +108,18 @@ def get_old_posts():
 
 
 def send_to_telegram(message):
-    """Sends a formatted message to Telegram."""
+    """Sends a formatted message to Telegram (proper async handling)."""
     try:
-        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="HTML")
+        asyncio.run(bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="HTML"))
         logging.info("Message sent to Telegram")
+        time.sleep(180)  # **Wait 3 minutes after each post**
     except Exception as e:
         logging.error(f"Failed to send message: {e}")
 
 
 def main():
     """Main loop to fetch and send movie posts."""
-    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="🤖 Bot restarted!")  # Notify bot restart
+    asyncio.run(bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="🤖 Bot restarted!"))  # Notify bot restart
     logging.info("Bot started!")
 
     while True:
@@ -143,7 +145,7 @@ def main():
             else:
                 logging.warning("No old posts available!")
 
-        time.sleep(180)  # Wait 180 seconds before next run
+        time.sleep(180)  # Wait 3 minutes before the next cycle
 
 
 if __name__ == "__main__":
