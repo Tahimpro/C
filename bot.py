@@ -1,151 +1,150 @@
-import aiohttp
-import asyncio
+import requests
+import time
+import random
 import logging
 from bs4 import BeautifulSoup
-import pymongo
 from pymongo import MongoClient
-from urllib.parse import urljoin
+from telegram import Bot
 
-# Direct configuration values
-TELEGRAM_BOT_TOKEN = '7524524705:AAH7aBrV5cAZNRFIx3ZZhO72kbi4tjNd8lI'
-TELEGRAM_CHAT_ID = '-1002340139937'
-BASE_URL = 'https://skymovieshd.video'
-CHECK_INTERVAL = 180  # Check every 3 minutes
-
-# MongoDB Configuration
-MONGODB_URI = "mongodb+srv://FF:FF@cluster0.xpbvq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
-DB_NAME = "skymovieshd"
-COLLECTION_NAME = "seen_links"
-
-# Ensure all required values are set
-if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID or not BASE_URL:
-    logging.error("Missing required environment variables.")
-    exit(1)
-
-# Configure logging
+# Logger setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Connect to MongoDB
-client = MongoClient(MONGODB_URI)
+# Telegram Bot Config
+TELEGRAM_BOT_TOKEN = "7524524705:AAH7aBrV5cAZNRFIx3ZZhO72kbi4tjNd8lI"
+TELEGRAM_CHAT_ID = "-1002340139937"
+bot = Bot(token=TELEGRAM_BOT_TOKEN)
+
+# MongoDB Config
+MONGO_URI = "mongodb+srv://FF:FF@cluster0.xpbvq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+DB_NAME = "skymovieshd"
+COLLECTION_NAME = "seen_links"
+client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 collection = db[COLLECTION_NAME]
 
-# Load seen links from MongoDB
-seen_links = {entry['url'] for entry in collection.find({}, {"_id": 0, "url": 1})}
+# Website URLs
+BASE_URL = "https://skymovieshd.video"
+BENGALI_CATEGORY_URL = "https://skymovieshd.video/category/Bengali-Movies.html"
+BENGALI_PAGES = [f"https://skymovieshd.video/category/Bengali-Movies/{i}.html" for i in range(1, 196)]
 
-async def fetch_html(session, url):
-    """Fetches HTML content of a URL."""
+
+def get_soup(url):
+    """Fetches and parses HTML content."""
     try:
-        async with session.get(url) as response:
-            return await response.text()
+        response = requests.get(url, allow_redirects=False)
+        return BeautifulSoup(response.text, "html.parser")
     except Exception as e:
         logging.error(f"Failed to fetch {url}: {e}")
         return None
 
-async def scrape_post_links(session):
-    """Scrapes movie post links from the homepage."""
-    html = await fetch_html(session, BASE_URL)
-    if not html:
-        return []
 
-    soup = BeautifulSoup(html, "html.parser")
-    post_links = set()
+def extract_movie_links(soup):
+    """Extracts movie post links from a page."""
+    movie_links = []
+    for link in soup.select('a[href*="/movie/"]'):
+        post_url = link["href"]
+        if not post_url.startswith("http"):
+            post_url = BASE_URL + post_url
+        movie_links.append(post_url)
+    return movie_links
 
-    for a_tag in soup.find_all("a", href=True):
-        post_url = a_tag['href']
-        if '/movie/' in post_url:
-            full_post_url = urljoin(BASE_URL, post_url)  # Ensures correct URL
-            post_links.add(full_post_url)
 
-    return list(post_links)
-
-async def extract_howblogs_link(session, post_url):
-    """Extracts howblogs.xyz link from the movie post page."""
-    html = await fetch_html(session, post_url)
-    if not html:
+def extract_download_links(movie_url):
+    """Extracts howblogs.xyz and direct download links from a movie post."""
+    soup = get_soup(movie_url)
+    if not soup:
         return None
 
-    soup = BeautifulSoup(html, "html.parser")
-    for a_tag in soup.find_all("a", href=True):
-        if "howblogs.xyz" in a_tag['href']:
-            return a_tag['href']
-    return None
+    # Extract movie title
+    title_section = soup.select('div[class^="Robiul"]')
+    movie_title = title_section[-1].text.replace("Download ", "") if title_section else "Unknown Movie"
 
-async def scrape_download_links(session, howblogs_url):
-    """Scrapes Gofile and Streamtape links from howblogs.xyz."""
-    html = await fetch_html(session, howblogs_url)
-    if not html:
+    message = f"<i>{movie_title}</i>"
+
+    _cache = []
+    for link in soup.select('a[href*="howblogs.xyz"]'):
+        if link["href"] in _cache:
+            continue
+        _cache.append(link["href"])
+        message += f"\n\n<b>{link.text} :</b> \n"
+
+        nsoup = get_soup(link["href"])
+        if not nsoup:
+            continue
+
+        atag = nsoup.select('div[class="cotent-box"] > a[href]')
+        for no, link in enumerate(atag, start=1):
+            message += f"{no}. {link['href']}\n"
+
+    return message
+
+
+def get_new_posts():
+    """Finds new movie posts."""
+    soup = get_soup(BENGALI_CATEGORY_URL)
+    if not soup:
         return []
 
-    soup = BeautifulSoup(html, "html.parser")
-    download_links = []
+    new_posts = extract_movie_links(soup)
+    return [post for post in new_posts if not collection.find_one({"link": post})]
 
-    for a_tag in soup.find_all("a", href=True):
-        link = a_tag['href']
-        if 'gofile.io' in link or 'streamtape.to' in link:
-            download_links.append(link)
 
-    return download_links
+def get_old_posts():
+    """Fetches old posts from Bengali category pages."""
+    random.shuffle(BENGALI_PAGES)  # Shuffle pages to avoid repetition
+    for page_url in BENGALI_PAGES:
+        soup = get_soup(page_url)
+        if not soup:
+            continue
 
-async def send_telegram_message(message):
-    """Sends a message to the Telegram channel."""
-    telegram_url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    params = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+        old_posts = extract_movie_links(soup)
+        unseen_posts = [post for post in old_posts if not collection.find_one({"link": post})]
 
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.post(telegram_url, params=params) as response:
-                if response.status == 200:
-                    logging.info("Message sent to Telegram.")
-                else:
-                    logging.error(f"Failed to send message: {await response.text()}")
-        except Exception as e:
-            logging.error(f"Error sending message: {e}")
+        if unseen_posts:
+            return unseen_posts
 
-async def save_seen_links():
-    """Saves new seen links to MongoDB."""
-    new_links = [{"url": link} for link in seen_links if not collection.find_one({"url": link})]
-    if new_links:
-        collection.insert_many(new_links)
-        logging.info("Seen links saved to MongoDB.")
+    return []
 
-async def main():
-    """Main scraping loop."""
-    global seen_links
 
-    async with aiohttp.ClientSession() as session:
-        logging.info("Bot restarted")
-        await send_telegram_message("Bot restarted")
+def send_to_telegram(message):
+    """Sends a formatted message to Telegram."""
+    try:
+        bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="HTML")
+        logging.info("Message sent to Telegram")
+    except Exception as e:
+        logging.error(f"Failed to send message: {e}")
 
-        while True:
-            logging.info("Checking for new posts...")
-            post_links = await scrape_post_links(session)
 
-            for post_url in post_links:
-                if post_url not in seen_links:
-                    logging.info(f"New post found: {post_url}")
+def main():
+    """Main loop to fetch and send movie posts."""
+    bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="🤖 Bot restarted!")  # Notify bot restart
+    logging.info("Bot started!")
 
-                    # Extract howblogs.xyz link
-                    howblogs_url = await extract_howblogs_link(session, post_url)
-                    if howblogs_url:
-                        logging.info(f"Found howblogs link: {howblogs_url}")
+    while True:
+        new_posts = get_new_posts()
 
-                        # Extract Gofile/Streamtape links
-                        download_links = await scrape_download_links(session, howblogs_url)
+        if new_posts:
+            logging.info(f"Found {len(new_posts)} new posts!")
+            for post_url in new_posts:
+                message = extract_download_links(post_url)
+                if message:
+                    send_to_telegram(message)
+                    collection.insert_one({"link": post_url})  # Mark as seen
+        else:
+            logging.info("No new posts found, fetching old posts...")
+            old_posts = get_old_posts()
 
-                        for link in download_links:
-                            message = f"🌟 {post_url}\n🔗 {link}"
+            if old_posts:
+                for post_url in old_posts:
+                    message = extract_download_links(post_url)
+                    if message:
+                        send_to_telegram(message)
+                        collection.insert_one({"link": post_url})  # Mark as seen
+            else:
+                logging.warning("No old posts available!")
 
-                            logging.info(f"Sending: {message}")
-                            await send_telegram_message(message)
+        time.sleep(180)  # Wait 180 seconds before next run
 
-                    seen_links.add(post_url)
-
-            # Save seen links periodically
-            await save_seen_links()
-
-            logging.info(f"Sleeping for {CHECK_INTERVAL} seconds before next check...")
-            await asyncio.sleep(CHECK_INTERVAL)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
