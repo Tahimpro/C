@@ -1,26 +1,26 @@
 import requests
-import asyncio
 import threading
 import logging
+import re
 from bs4 import BeautifulSoup
 from flask import Flask
 from pymongo import MongoClient
 from time import sleep
 
-# 🔹 User Credentials & Configurations
+# 🔹 Configuration
 BOT_TOKEN = "7524524705:AAH7aBrV5cAZNRFIx3ZZhO72kbi4tjNd8lI"
 CHAT_ID = "-1002340139937"
 MONGO_URI = "mongodb+srv://FF:FF@cluster0.xpbvq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 DB_NAME = "skymovieshd"
 COLLECTION_NAME = "seen_links"
 BASE_URL = "https://skymovieshd.video"
-CATEGORY_URL = "https://skymovieshd.video/category/Bengali-Movies.html"
+CATEGORY_URL = f"{BASE_URL}/category/Bengali-Movies.html"
 INTERVAL = 180  # Time in seconds
 
-# 🔹 Setup Logger
+# 🔹 Logger Setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# 🔹 Setup Flask App for Koyeb Health Check
+# 🔹 Flask App (Health Check for Koyeb)
 app = Flask(__name__)
 
 @app.route("/")
@@ -32,11 +32,10 @@ client = MongoClient(MONGO_URI)
 db = client[DB_NAME]
 collection = db[COLLECTION_NAME]
 
-# 🔹 Function to Send Telegram Message
-def send_message_sync(text):
+# 🔹 Telegram Message Function
+def send_message(text):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
     data = {"chat_id": CHAT_ID, "text": text}
-
     try:
         response = requests.post(url, json=data)
         response.raise_for_status()
@@ -44,38 +43,77 @@ def send_message_sync(text):
     except Exception as e:
         logging.error(f"Failed to send message: {e}")
 
-# 🔹 Async Message Handling
-def send_telegram_message(text):
-    threading.Thread(target=send_message_sync, args=(text,)).start()
-
-# 🔹 Scrape Function
+# 🔹 Scraper Function
 def scrape_posts():
     try:
         logging.info("Checking for new posts...")
         response = requests.get(CATEGORY_URL)
         soup = BeautifulSoup(response.text, "html.parser")
-        
+
         # Find movie post links
         movie_links = [a["href"] for a in soup.find_all("a", href=True) if "/movie/" in a["href"]]
 
-        new_posts = []
         for link in movie_links:
             if not collection.find_one({"link": link}):
                 collection.insert_one({"link": link})
-                new_posts.append(f"🌟 {link}")
+                full_url = f"{BASE_URL}{link}"
 
-        if new_posts:
-            for post in new_posts:
-                send_telegram_message(post)
-        else:
-            logging.info("No new posts found, fetching old posts...")
-            fetch_old_posts()
+                # Extract `howblogs.xyz` links
+                howblogs_links = extract_howblogs_links(full_url)
 
+                # Extract Gofile.io & Streamtape.to links
+                for howblogs_link in howblogs_links:
+                    download_links = extract_download_links(howblogs_link)
+                    if download_links:
+                        movie_name = extract_movie_name(full_url)
+                        for dl_link in download_links:
+                            send_message(f"🌟 {movie_name} {dl_link}")
+
+        logging.info("Scraping complete.")
     except Exception as e:
         logging.error(f"Scraping error: {e}")
 
+# 🔹 Extract `howblogs.xyz` Links
+def extract_howblogs_links(movie_url):
+    try:
+        response = requests.get(movie_url)
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        howblogs_links = [a["href"] for a in soup.find_all("a", href=True) if "howblogs.xyz" in a["href"]]
+        return howblogs_links
+
+    except Exception as e:
+        logging.error(f"Error extracting howblogs.xyz links: {e}")
+        return []
+
+# 🔹 Extract Gofile.io & Streamtape.to Links
+def extract_download_links(howblogs_url):
+    try:
+        response = requests.get(howblogs_url)
+        soup = BeautifulSoup(response.text, "html.parser")
+
+        download_links = [a["href"] for a in soup.find_all("a", href=True) if "gofile.io" in a["href"] or "streamtape.to" in a["href"]]
+        return download_links
+
+    except Exception as e:
+        logging.error(f"Error extracting download links: {e}")
+        return []
+
+# 🔹 Extract Movie Name
+def extract_movie_name(movie_url):
+    try:
+        match = re.search(r"/movie/([^/]+)", movie_url)
+        if match:
+            movie_name = match.group(1).replace("-", " ")
+            return movie_name
+        return "Unknown Movie"
+    except Exception as e:
+        logging.error(f"Error extracting movie name: {e}")
+        return "Unknown Movie"
+
 # 🔹 Fetch Old Posts If No New Posts Found
 def fetch_old_posts():
+    logging.info("Fetching old posts...")
     for page in range(1, 196):
         page_url = f"{BASE_URL}/category/Bengali-Movies/{page}.html"
         try:
@@ -84,17 +122,28 @@ def fetch_old_posts():
             movie_links = [a["href"] for a in soup.find_all("a", href=True) if "/movie/" in a["href"]]
 
             for link in movie_links:
-                send_telegram_message(f"🌟 {link}")
+                full_url = f"{BASE_URL}{link}"
+                movie_name = extract_movie_name(full_url)
+                
+                # Extract `howblogs.xyz` links
+                howblogs_links = extract_howblogs_links(full_url)
+
+                # Extract Gofile & Streamtape links
+                for howblogs_link in howblogs_links:
+                    download_links = extract_download_links(howblogs_link)
+                    for dl_link in download_links:
+                        send_message(f"🌟 {movie_name} {dl_link}")
+
                 sleep(2)  # Prevent Telegram spam blocking
 
-            return  # Exit after sending first batch
+            return  # Stop after first batch of old posts
 
         except Exception as e:
             logging.error(f"Error fetching old posts: {e}")
 
-# 🔹 Main Loop
+# 🔹 Main Bot Loop
 def start_bot():
-    send_telegram_message("Bot restarted")  # Notify restart
+    send_message("Bot restarted ✅")  # Notify restart
     while True:
         scrape_posts()
         sleep(INTERVAL)
