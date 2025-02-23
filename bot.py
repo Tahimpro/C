@@ -44,7 +44,7 @@ def send_telegram_message(message):
         return None
 
 def fetch_movie_links():
-    """Fetch all movie post links from the category page."""
+    """Fetch all movie post links from the category page (No filtering)."""
     try:
         logging.info(f"Fetching category page: {CATEGORY_URL}")
         response = requests.get(CATEGORY_URL, headers={"User-Agent": "Mozilla/5.0"})
@@ -54,15 +54,10 @@ def fetch_movie_links():
             return []
 
         soup = BeautifulSoup(response.text, "html.parser")
-        links = []
+        links = [post["href"] for post in soup.select("h2.entry-title a")]
 
-        for post in soup.select("h2.entry-title a"):
-            post_link = post["href"]
-            if not collection.find_one({"url": post_link}):
-                links.append(post_link)
-
-        logging.info(f"Found {len(links)} new posts.")
-        return links
+        logging.info(f"Found {len(links)} posts.")
+        return links  # Return all posts without filtering
 
     except Exception as e:
         logging.error(f"Error fetching movie links: {e}")
@@ -123,9 +118,9 @@ def process_movies():
         movie_links = fetch_movie_links()
 
         if not movie_links:
-            logging.info("No new movie posts found.")
+            logging.info("No movie posts found.")
         else:
-            logging.info(f"Processing {len(movie_links)} new posts...")
+            logging.info(f"Processing {len(movie_links)} posts...")
 
         for link in movie_links:
             movie_name = link.split("/")[-1].replace("-", " ").replace(".html", "")
@@ -150,8 +145,8 @@ def process_movies():
             else:
                 logging.info(f"No valid download links found for {movie_name}.")
 
-        logging.info("Sleeping for 10 minutes...")
-        time.sleep(600)
+        logging.info("Sleeping for 1 minutes...")
+        time.sleep(60)
 
 # Run bot in a separate thread
 threading.Thread(target=process_movies, daemon=True).start()
