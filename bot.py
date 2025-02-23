@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 # Directly set the values for your variables
 TELEGRAM_BOT_TOKEN = '7524524705:AAH7aBrV5cAZNRFIx3ZZhO72kbi4tjNd8lI'
 TELEGRAM_CHAT_ID = '-1002340139937'
-BASE_URL = 'your_base_url_here'  # Replace with the actual URL
+BASE_URL = 'https://Skymovieshd.video'  # Replace with the actual URL
 CHECK_INTERVAL = 180  # Default to 180 seconds if not set
 
 # Ensure all required variables are set
