@@ -1,6 +1,6 @@
-import os
+# Configurations for the scraper bot
 
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "7524524705:AAH7aBrV5cAZNRFIx3ZZhO72kbi4tjNd8lI")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "-1002340139937")
-BASE_URL = "https://skymovieshd.video/"
-CHECK_INTERVAL = 180  # 3 minutes
+TELEGRAM_BOT_TOKEN = "your-telegram-bot-token"
+TELEGRAM_CHAT_ID = "your-telegram-chat-id"
+BASE_URL = "https://www.skymovieshd.bz"
+CHECK_INTERVAL = 180  # 3 minutes (in seconds)
