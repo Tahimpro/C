@@ -2,11 +2,13 @@ import aiohttp
 import asyncio
 import logging
 from bs4 import BeautifulSoup
+import os
+import pickle
 
 # Directly set the values for your variables
 TELEGRAM_BOT_TOKEN = '7524524705:AAH7aBrV5cAZNRFIx3ZZhO72kbi4tjNd8lI'
 TELEGRAM_CHAT_ID = '-1002340139937'
-BASE_URL = 'https://skymovieshd.video/movie'
+BASE_URL = 'https://skymovieshd.video/movie/'
 CHECK_INTERVAL = 180  # Check every 3 minutes
 
 # Ensure all required variables are set
@@ -17,8 +19,15 @@ if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID or not BASE_URL:
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Storage for seen links
-seen_links = set()
+# Path to store the seen links
+SEEN_LINKS_FILE = 'seen_links.pkl'
+
+# Load the seen links from file (if exists)
+if os.path.exists(SEEN_LINKS_FILE):
+    with open(SEEN_LINKS_FILE, 'rb') as f:
+        seen_links = pickle.load(f)
+else:
+    seen_links = set()
 
 async def fetch_html(session, url):
     async with session.get(url) as response:
@@ -32,7 +41,7 @@ async def scrape_post_links(session):
     post_links = []
     for a_tag in soup.find_all("a", href=True):
         post_url = a_tag['href']
-        if 'howblogs.xyz' in post_url:
+        if '/movie/' in post_url:  # Update to reflect the correct path for movie posts
             post_links.append(post_url)
     return post_links
 
@@ -59,6 +68,12 @@ async def send_telegram_message(message):
             else:
                 logging.error(f"Failed to send message: {await response.text()}")
 
+async def save_seen_links():
+    # Save the seen links to a file to persist across restarts
+    with open(SEEN_LINKS_FILE, 'wb') as f:
+        pickle.dump(seen_links, f)
+    logging.info("Seen links saved.")
+
 async def main():
     global seen_links
 
@@ -81,6 +96,9 @@ async def main():
                         await send_telegram_message(message)
 
                     seen_links.add(post_url)
+
+            # Save seen links periodically
+            await save_seen_links()
 
             logging.info(f"Sleeping for {CHECK_INTERVAL} seconds before next check...")
             await asyncio.sleep(CHECK_INTERVAL)
