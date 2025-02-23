@@ -29,47 +29,18 @@ async def scrape_latest_movies(session):
     url = f"{BASE_URL}"
     html = await fetch_html(session, url)
     soup = BeautifulSoup(html, "html.parser")
-    
-    # Find "Latest Updated Movies" section
-    latest_section = soup.find("div", class_="Robiul", text=re.compile("Latest Updated Movies"))
-    if not latest_section:
-        logging.warning("Couldn't find 'Latest Updated Movies' section.")
-        return []
 
-    movies = []
-    for div in latest_section.find_all_next("div", class_="Fmvideo"):
+    # Find all movie links in the page using the structure provided
+    movie_links = []
+    for div in soup.find_all("div", class_="Fmvideo"):
         a_tag = div.find("a")
         if a_tag:
             movie_name = a_tag.text.strip()
-            movie_link = BASE_URL + a_tag["href"]  # Correct the link to include movie path
-            movies.append((movie_name, movie_link))
+            movie_link = BASE_URL + a_tag["href"]  # Full movie link
+            if movie_link not in seen_links:  # Avoid sending duplicates
+                movie_links.append((movie_name, movie_link))
 
-    return movies
-
-async def extract_final_links(session, movie_name, movie_url):
-    html = await fetch_html(session, movie_url)
-    soup = BeautifulSoup(html, "html.parser")
-
-    # Find howblogs.xyz link
-    external_link = None
-    for a_tag in soup.find_all("a", href=True):
-        if "howblogs.xyz" in a_tag["href"]:
-            external_link = a_tag["href"]
-            break
-
-    if not external_link:
-        logging.info(f"No howblogs.xyz link found for {movie_name}")
-        return None
-
-    # Visit howblogs.xyz and extract gofile.io or streamtape.to links
-    html = await fetch_html(session, external_link)
-    soup = BeautifulSoup(html, "html.parser")
-
-    for a_tag in soup.find_all("a", href=True):
-        if "gofile.io" in a_tag["href"] or "streamtape.to" in a_tag["href"]:
-            return a_tag["href"]
-
-    return None
+    return movie_links
 
 async def send_telegram_message(movie_name, final_link):
     message = f"🌟 {movie_name} {final_link}"
@@ -96,13 +67,9 @@ async def main():
             movies = await scrape_latest_movies(session)
 
             for movie_name, movie_url in movies:
-                if movie_url in seen_links:
-                    continue
-
-                final_link = await extract_final_links(session, movie_name, movie_url)
-                if final_link:
-                    await send_telegram_message(movie_name, final_link)
-                    seen_links.add(movie_url)
+                # Avoid sending duplicates
+                seen_links.add(movie_url)
+                await send_telegram_message(movie_name, movie_url)
 
             logging.info("Sleeping before next check...")
             await asyncio.sleep(CHECK_INTERVAL)
