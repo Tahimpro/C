@@ -6,6 +6,7 @@ import asyncio
 from bs4 import BeautifulSoup
 from pymongo import MongoClient
 from telegram import Bot
+from flask import Flask
 
 # Logger setup
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -28,6 +29,12 @@ BASE_URL = "https://skymovieshd.video"
 BENGALI_CATEGORY_URL = "https://skymovieshd.video/category/Bengali-Movies.html"
 BENGALI_PAGES = [f"https://skymovieshd.video/category/Bengali-Movies/{i}.html" for i in range(1, 196)]
 
+# Flask app for Koyeb health check
+app = Flask(__name__)
+
+@app.route("/")
+def health_check():
+    return "Bot is running!", 200
 
 def get_soup(url):
     """Fetches and parses HTML content."""
@@ -38,7 +45,6 @@ def get_soup(url):
         logging.error(f"Failed to fetch {url}: {e}")
         return None
 
-
 def extract_movie_links(soup):
     """Extracts movie post links from a page."""
     movie_links = []
@@ -48,7 +54,6 @@ def extract_movie_links(soup):
             post_url = BASE_URL + post_url
         movie_links.append(post_url)
     return movie_links
-
 
 def extract_download_links(movie_url):
     """Extracts howblogs.xyz and direct download links from a movie post."""
@@ -79,7 +84,6 @@ def extract_download_links(movie_url):
 
     return message
 
-
 def get_new_posts():
     """Finds new movie posts."""
     soup = get_soup(BENGALI_CATEGORY_URL)
@@ -88,7 +92,6 @@ def get_new_posts():
 
     new_posts = extract_movie_links(soup)
     return [post for post in new_posts if not collection.find_one({"link": post})]
-
 
 def get_old_posts():
     """Fetches old posts from Bengali category pages."""
@@ -106,20 +109,24 @@ def get_old_posts():
 
     return []
 
-
 def send_to_telegram(message):
     """Sends a formatted message to Telegram (proper async handling)."""
     try:
-        asyncio.run(bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="HTML"))
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=message, parse_mode="HTML"))
         logging.info("Message sent to Telegram")
         time.sleep(180)  # **Wait 3 minutes after each post**
     except Exception as e:
         logging.error(f"Failed to send message: {e}")
 
-
-def main():
+def bot_loop():
     """Main loop to fetch and send movie posts."""
-    asyncio.run(bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="🤖 Bot restarted!"))  # Notify bot restart
+    try:
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(bot.send_message(chat_id=TELEGRAM_CHAT_ID, text="🤖 Bot restarted!"))  # Notify bot restart
+    except Exception as e:
+        logging.error(f"Failed to send bot restart message: {e}")
+
     logging.info("Bot started!")
 
     while True:
@@ -147,6 +154,10 @@ def main():
 
         time.sleep(180)  # Wait 3 minutes before the next cycle
 
-
 if __name__ == "__main__":
-    main()
+    from threading import Thread
+    # Start bot loop in a separate thread
+    Thread(target=bot_loop, daemon=True).start()
+    
+    # Start Flask app for Koyeb health check
+    app.run(host="0.0.0.0", port=8080)
