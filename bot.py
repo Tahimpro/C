@@ -1,15 +1,19 @@
-import os
 import aiohttp
 import asyncio
 import logging
 import re
 from bs4 import BeautifulSoup
 
-# Load environment variables
-TELEGRAM_BOT_TOKEN = os.getenv('7524524705:AAH7aBrV5cAZNRFIx3ZZhO72kbi4tjNd8lI')
-TELEGRAM_CHAT_ID = os.getenv('-1002340139937')
-BASE_URL = os.getenv('BASE_URL')
-CHECK_INTERVAL = int(os.getenv('CHECK_INTERVAL', 180))  # Default to 180 seconds if not set
+# Directly set the values for your variables
+TELEGRAM_BOT_TOKEN = '7524524705:AAH7aBrV5cAZNRFIx3ZZhO72kbi4tjNd8lI'
+TELEGRAM_CHAT_ID = '-1002340139937'
+BASE_URL = 'your_base_url_here'  # Replace with the actual URL
+CHECK_INTERVAL = 180  # Default to 180 seconds if not set
+
+# Ensure all required variables are set
+if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID or not BASE_URL:
+    logging.error("Missing required variables: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, BASE_URL.")
+    exit(1)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
