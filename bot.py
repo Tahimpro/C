@@ -19,8 +19,8 @@ if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID or not BASE_URL:
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Path to store the seen links
-SEEN_LINKS_FILE = 'seen_links.pkl'
+# Path to store the seen links (Using Koyeb’s persistent storage)
+SEEN_LINKS_FILE = '/mnt/data/seen_links.pkl'
 
 # Load the seen links from file (if exists)
 if os.path.exists(SEEN_LINKS_FILE):
