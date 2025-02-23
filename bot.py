@@ -13,7 +13,7 @@ COLLECTION_NAME = "seen_links"
 # Directly set the values for your variables
 TELEGRAM_BOT_TOKEN = '7524524705:AAH7aBrV5cAZNRFIx3ZZhO72kbi4tjNd8lI'
 TELEGRAM_CHAT_ID = '-1002340139937'
-BASE_URL = 'https://skymovieshd.video'  # Updated base URL
+BASE_URL = 'https://skymovieshd.video'
 CHECK_INTERVAL = 180  # Check every 3 minutes
 
 # Ensure all required variables are set
@@ -34,36 +34,43 @@ seen_links = set(link['url'] for link in collection.find())
 
 async def fetch_html(session, url):
     async with session.get(url) as response:
-        html = await response.text()
-        logging.info(f"Fetched HTML from {url}: {html[:500]}...")  # Log first 500 characters of the HTML for inspection
-        return html
+        return await response.text()
 
 async def scrape_post_links(session):
     html = await fetch_html(session, BASE_URL)
     soup = BeautifulSoup(html, "html.parser")
 
-    # Find all post links
+    # Find all post links with 'movie' in the URL
     post_links = []
     for a_tag in soup.find_all("a", href=True):
         post_url = a_tag['href']
-        if '/movie/' in post_url:  # Update to reflect the correct path for movie posts
-            post_links.append(post_url)
-    
-    logging.info(f"Found {len(post_links)} post links.")
+        if '/movie/' in post_url:  # This is the correct pattern for movie posts
+            full_post_url = BASE_URL + post_url  # Add base URL to the relative path
+            post_links.append(full_post_url)
     return post_links
 
-async def scrape_download_links(session, post_url):
+async def extract_howblogs_link(session, post_url):
     html = await fetch_html(session, post_url)
     soup = BeautifulSoup(html, "html.parser")
 
-    # Find download links
+    # Find howblogs.xyz link
+    howblogs_link = None
+    for a_tag in soup.find_all("a", href=True):
+        if "howblogs.xyz" in a_tag['href']:
+            howblogs_link = a_tag['href']
+            break
+    return howblogs_link
+
+async def scrape_download_links(session, howblogs_url):
+    html = await fetch_html(session, howblogs_url)
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Find Gofile and Streamtape links
     download_links = []
     for a_tag in soup.find_all("a", href=True):
         link = a_tag['href']
         if 'gofile.io' in link or 'streamtape.to' in link:
             download_links.append(link)
-    
-    logging.info(f"Found {len(download_links)} download links for {post_url}.")
     return download_links
 
 async def send_telegram_message(message):
@@ -99,16 +106,23 @@ async def main():
             for post_url in post_links:
                 if post_url not in seen_links:
                     logging.info(f"New post found: {post_url}")
-                    download_links = await scrape_download_links(session, post_url)
+                    
+                    # Extract the howblogs link from the post page
+                    howblogs_url = await extract_howblogs_link(session, post_url)
+                    if howblogs_url:
+                        logging.info(f"Found howblogs link: {howblogs_url}")
+                        
+                        # Extract the Gofile/Streamtape links from howblogs page
+                        download_links = await scrape_download_links(session, howblogs_url)
 
-                    for link in download_links:
-                        message = f"⚡ {link}\n📺 {post_url}"
+                        for link in download_links:
+                            message = f"⚡ {link}\n📺 {post_url}"
 
-                        # Print download link in terminal
-                        logging.info(f"Found download link: {link} for post: {post_url}")
+                            # Print download link in terminal
+                            logging.info(f"Found download link: {link} for post: {post_url}")
 
-                        # Send message to Telegram
-                        await send_telegram_message(message)
+                            # Send message to Telegram
+                            await send_telegram_message(message)
 
                     seen_links.add(post_url)
 
