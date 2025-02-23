@@ -123,8 +123,8 @@ def process_movies():
                 send_telegram_message(message)
                 collection.insert_one({"url": link})
 
-        logging.info("Sleeping for 10 minutes...")
-        time.sleep(600)
+        logging.info("Sleeping for 1 minutes...")
+        time.sleep(60)
 
 # Run bot in a separate thread
 threading.Thread(target=process_movies, daemon=True).start()
