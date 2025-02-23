@@ -2,8 +2,13 @@ import aiohttp
 import asyncio
 import logging
 from bs4 import BeautifulSoup
-import os
-import pickle
+import pymongo
+from pymongo import MongoClient
+
+# MongoDB URI
+MONGODB_URI = "mongodb+srv://FF:FF@cluster0.xpbvq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
+DB_NAME = "skymovieshd"
+COLLECTION_NAME = "seen_links"
 
 # Directly set the values for your variables
 TELEGRAM_BOT_TOKEN = '7524524705:AAH7aBrV5cAZNRFIx3ZZhO72kbi4tjNd8lI'
@@ -19,15 +24,13 @@ if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID or not BASE_URL:
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Path to store the seen links (Using Koyeb’s persistent storage)
-SEEN_LINKS_FILE = '/mnt/data/seen_links.pkl'
+# Connect to MongoDB
+client = MongoClient(MONGODB_URI)
+db = client[DB_NAME]
+collection = db[COLLECTION_NAME]
 
-# Load the seen links from file (if exists)
-if os.path.exists(SEEN_LINKS_FILE):
-    with open(SEEN_LINKS_FILE, 'rb') as f:
-        seen_links = pickle.load(f)
-else:
-    seen_links = set()
+# Load the seen links from MongoDB (if exists)
+seen_links = set(link['url'] for link in collection.find())
 
 async def fetch_html(session, url):
     async with session.get(url) as response:
@@ -69,10 +72,11 @@ async def send_telegram_message(message):
                 logging.error(f"Failed to send message: {await response.text()}")
 
 async def save_seen_links():
-    # Save the seen links to a file to persist across restarts
-    with open(SEEN_LINKS_FILE, 'wb') as f:
-        pickle.dump(seen_links, f)
-    logging.info("Seen links saved.")
+    # Save the seen links to MongoDB
+    for link in seen_links:
+        if not collection.find_one({"url": link}):
+            collection.insert_one({"url": link})
+    logging.info("Seen links saved to MongoDB.")
 
 async def main():
     global seen_links
@@ -97,7 +101,7 @@ async def main():
 
                     seen_links.add(post_url)
 
-            # Save seen links periodically
+            # Save seen links periodically to MongoDB
             await save_seen_links()
 
             logging.info(f"Sleeping for {CHECK_INTERVAL} seconds before next check...")
