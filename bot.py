@@ -97,6 +97,11 @@ async def main():
 
                     for link in download_links:
                         message = f"⚡ {link}\n📺 {post_url}"
+
+                        # Print download link in terminal
+                        logging.info(f"Found download link: {link} for post: {post_url}")
+
+                        # Send message to Telegram
                         await send_telegram_message(message)
 
                     seen_links.add(post_url)
