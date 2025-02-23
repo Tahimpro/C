@@ -2,12 +2,13 @@ import aiohttp
 import asyncio
 import logging
 import re
+from aiohttp import ClientTimeout
 from bs4 import BeautifulSoup
 
 # Directly set the values for your variables
 TELEGRAM_BOT_TOKEN = '7524524705:AAH7aBrV5cAZNRFIx3ZZhO72kbi4tjNd8lI'
 TELEGRAM_CHAT_ID = '-1002340139937'
-BASE_URL = 'https://Skymovieshd.video'  # Replace with the actual URL
+BASE_URL = 'https://skymovieshd.video'  # Corrected to lowercase
 CHECK_INTERVAL = 180  # Default to 180 seconds if not set
 
 # Ensure all required variables are set
@@ -22,12 +23,26 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 seen_links = set()
 
 async def fetch_html(session, url):
-    async with session.get(url) as response:
-        return await response.text()
+    try:
+        timeout = ClientTimeout(total=30)  # Set timeout to 30 seconds
+        async with session.get(url, timeout=timeout) as response:
+            return await response.text()
+    except aiohttp.client_exceptions.ClientConnectorError as e:
+        logging.error(f"Connection error while fetching {url}: {e}")
+        return None
+    except Exception as e:
+        logging.error(f"An unexpected error occurred while fetching {url}: {e}")
+        return None
 
 async def scrape_latest_movies(session):
     url = f"{BASE_URL}"
     html = await fetch_html(session, url)
+    if html:
+        logging.info(f"Fetched HTML: {html[:500]}")  # Log first 500 characters to check structure
+    else:
+        logging.warning(f"Failed to fetch HTML from {BASE_URL}")
+        return []
+
     soup = BeautifulSoup(html, "html.parser")
     
     # Find "Latest Updated Movies" section
@@ -48,6 +63,9 @@ async def scrape_latest_movies(session):
 
 async def extract_final_links(session, movie_name, movie_url):
     html = await fetch_html(session, movie_url)
+    if not html:
+        return None
+
     soup = BeautifulSoup(html, "html.parser")
 
     # Find howblogs.xyz link
@@ -63,6 +81,9 @@ async def extract_final_links(session, movie_name, movie_url):
 
     # Visit howblogs.xyz and extract gofile.io or streamtape.to links
     html = await fetch_html(session, external_link)
+    if not html:
+        return None
+
     soup = BeautifulSoup(html, "html.parser")
 
     for a_tag in soup.find_all("a", href=True):
