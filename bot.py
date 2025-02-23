@@ -1,14 +1,14 @@
 import aiohttp
 import asyncio
 import logging
+from aiohttp import web
 import re
-from aiohttp import ClientTimeout
 from bs4 import BeautifulSoup
 
 # Directly set the values for your variables
 TELEGRAM_BOT_TOKEN = '7524524705:AAH7aBrV5cAZNRFIx3ZZhO72kbi4tjNd8lI'
 TELEGRAM_CHAT_ID = '-1002340139937'
-BASE_URL = 'https://skymovieshd.video'  # Corrected to lowercase
+BASE_URL = 'https://skymovieshd.video'  # Corrected to lowercase (ensure base URL is consistent)
 CHECK_INTERVAL = 180  # Default to 180 seconds if not set
 
 # Ensure all required variables are set
@@ -22,9 +22,13 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 # Storage for seen links
 seen_links = set()
 
+# Health check handler
+async def health_check(request):
+    return web.Response(text="OK")
+
 async def fetch_html(session, url):
     try:
-        timeout = ClientTimeout(total=30)  # Set timeout to 30 seconds
+        timeout = aiohttp.ClientTimeout(total=30)  # Set timeout to 30 seconds
         async with session.get(url, timeout=timeout) as response:
             return await response.text()
     except aiohttp.client_exceptions.ClientConnectorError as e:
@@ -56,7 +60,7 @@ async def scrape_latest_movies(session):
         a_tag = div.find("a")
         if a_tag:
             movie_name = a_tag.text.strip()
-            movie_link = BASE_URL + a_tag["href"]
+            movie_link = BASE_URL + a_tag["href"]  # Ensure correct base URL is used
             movies.append((movie_name, movie_link))
 
     return movies
@@ -106,6 +110,17 @@ async def send_telegram_message(movie_name, final_link):
 
 async def main():
     global seen_links
+
+    # Start HTTP server to handle health check requests
+    app = web.Application()
+    app.router.add_get('/health', health_check)
+    
+    # Run the health check server in the background
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    await site.start()
+    logging.info("Health check server started at http://localhost:8080/health")
 
     async with aiohttp.ClientSession() as session:
         logging.info("Bot restarted")
